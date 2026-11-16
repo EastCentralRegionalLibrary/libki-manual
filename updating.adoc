@@ -13,6 +13,10 @@ Then make a backup of your current server and database, in case something doesn'
 
 Please read through the backup section on how to backup your server.
 
+=== The update utility
+
+On a server installed with `install.sh` you can instead run `libki-update` as root. It makes a backup (see the Backup & restoration chapter), lets you pick a release, updates the server files, database and Perl modules, and restarts the service. Use `libki-update -s` for a non-interactive update to the latest release. The manual steps below do the same thing by hand.
+
 === Get the latest version and updating the database
 
 Enter your libki-server folder and use `git pull` to download the latest version. Run `installer/update_db.pl` in order to update the database.

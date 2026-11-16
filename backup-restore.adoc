@@ -2,29 +2,29 @@
 
 WARNING: It is *HIGHLY* advised to only perform  backups and restorations of the database while the system is not being used!
 
-=== Backing up the database
+=== Backing up
 
-The backup program is intended to be used on a server with a libki user. 
+The backup program is intended to be used on a server installed with `install.sh`, which has a `libki` user. Run it as root.
 
-A backup folder will be created in the libki user's home directory, where the backups are stored.
+IMPORTANT: Making a backup *stops the Libki service* while it runs and starts it again afterwards, so clients cannot log in for a short time.
 
-Please note that this will only create local backups. It is adviced to transfer them to a safe location. A guide on how to transfer automatic backups to an FTP server will be added later.
+Each backup is a single archive containing the database dump (`db.sql`), a tarball of the server files (`libki-server.tar.gz`) and the init script (`init`). Archives are written to `/home/libki/backups`.
+
+Please note that this will only create local backups. It is advised to transfer them to a safe location.
 
 ==== Make a backup manually
 
-Simply run `libki-backup`.
+Run `libki-backup`.
 
-The backup will be created and stored in `/home/libki/backups`. The file name will contain date and time for the backup for easier identifying, i. e. `db_180706_19.30.sql`.
+The file name contains the date and time, for example `libki_backup_180706_19.30.tar.gz`.
 
 ==== Make automatic backups
 
 The backup program features a silent mode, perfect for when you don't want any user input or text output. Run `libki-backup -s` to run it in silent mode.
 
-Automatic backups work the same way as the manual backups, but does not provide any output text. The backup file is created directly in `/home/libki/backups`.
+Automatic backups work the same way as the manual backups, but do not print anything.
 
-If you want to make backups automatically according to a schedule, this is easiest done through crontab. I won't go through how crontab works, but will provide some example schedules.
-
-Start by running `crontab -e`. You will probably want to use the default editor. Add the schedule at the bottom of the file.
+To run backups on a schedule, use root's crontab: run `sudo crontab -e` and add a schedule at the bottom of the file.
 
 *Crontab examples*
 
@@ -49,43 +49,30 @@ Backup the first date in every month at 01.15:
 15 1 1 * * /usr/local/bin/libki-backup -s
 ----
 
-=== Backing up the server files
+NOTE: The backup program dumps a database named `libki` using root's database access. It does not back up a Docker deployment; for Docker, back up the `db_data` volume or use `mysqldump` against the `db` container.
 
-The easiest way to backup the server files is to tar the libki-server folder in the libki user's home folder. I suggest you put it in the same backup folder as the database backup.
+=== Restoring a backup
 
-[source,bash]
-----
-tar -pzcvf /home/libki/backups/libki-server-backup_190816.tar.gz /home/libki/libki-server
-----
+WARNING: Restoring *deletes the current database and the current server files*, then replaces them with the contents of the archive. Make sure you really want this.
 
-=== Restoring a database backup
-
-Restoring a backup of the database will delete the current database, so be sure you really want to do this.
-
-Start by navigating to the folder containing the backup you want to restore. If the backup was created with the backup program, this folder will be `/home/libki/backups`.
+Run `libki-restore` as root with the path of the backup archive. It must be a `.tar.gz` file made by `libki-backup`; a bare `.sql` dump is rejected.
 
 [source,bash]
 ----
-cd /home/libki/backups
+libki-restore /home/libki/backups/libki_backup_180706_19.30.tar.gz
 ----
 
-Now run the program and specify what backup you want to restore.
+The program asks for confirmation, stops the service, restores the database, the server files and the init script, and starts the service again. Your server is now at the point it was when the backup was created.
 
-[source,bash]
-----
-libki-restore db_180706_19.30.sql
-----
+=== Restoring only the database
 
-Your database is now at the point it was when the backup was created.
-
-=== Restoring a backup of the server files
-
-Start by removing the current server files and replace them with the backup archive.
+If you only want the database from a backup, extract `db.sql` from the archive and load it yourself:
 
 [source,bash]
 ----
 service libki stop
-rm -rf /home/libki/libki-server
-tar -pzxvf /home/libki/backups/libki-server-backup_190816.tar.gz /home/libki/libki-server
+mkdir /tmp/restore && tar -C /tmp/restore -pxzf /home/libki/backups/libki_backup_180706_19.30.tar.gz db.sql
+mysql -e "DROP DATABASE libki; CREATE DATABASE libki DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql libki < /tmp/restore/db.sql
 service libki start
 ----

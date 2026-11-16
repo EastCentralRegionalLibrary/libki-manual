@@ -20,13 +20,13 @@ TIP: The value of *Default time allowance per session* should be a whole number.
 
 This is the same as *Default time allowance per day*, except for guest accounts instead of regular users.
 
-TIP: The value of *Default time allowance per day* should be a whole number.
+TIP: The value of *Default guest time allowance per day* should be a whole number.
 
 ===== Default guest time allowance per session
 
 This is the same as *Default time allowance per session*, except for guest accounts instead of regular users.
 
-TIP: The value of *Default guest time allowance per day* should be a whole number.
+TIP: The value of *Default guest time allowance per session* should be a whole number.
 
 ==== Automatic time extension
 
@@ -97,6 +97,16 @@ When a Libki client launches, it periodically connects to the Libki server to re
 
 TIP: The value of *Client registration update delay limit* should be a whole number.
 
+===== Enable session locking for clients
+
+Allows a client user to lock the session, which returns Libki to a locked screen. The user can walk away and later return to resume the session. While the client is locked, session minutes continue to count down.
+
+===== Enable passwordless mode for clients
+
+If enabled, passwords are not checked for client logins and the password field is hidden in client v2.2.22 or later.
+
+WARNING: Anyone who knows or guesses a username can log in as that user.
+
 ===== Client login banners
 
 The client banners are optional areas on the top and bottom of the Libki client login screen. They are functionally like to web browsers. As such, anything that is viewable in a web browser is viewable in the banner areas \( size permitting \).
@@ -159,6 +169,10 @@ TIP: The format is one address per line, where each address uses either no separ
 
 Libki can automatically send a wake up signal to each machine whose MAC address is listed in the *MAC addresses* setting. All the machines will be woken up at this time each day. Leave empty to disable.
 
+==== Client style sheet
+
+Style the Libki client using https://doc.qt.io/qt-5/stylesheet-reference.html[Qt Style Sheets].
+
 ==== Custom Javascript
 
 ===== Administration interface JavaScript
@@ -192,6 +206,14 @@ This setting controls how long a user can be inactive before being automatically
 TIP: The value of *Inactive user retention* should be a whole number.
 
 This setting should be used to conform to https://www.eugdpr.org/[GDPR] if necessary.
+
+===== Print job retention
+
+How long, in days, print jobs are kept. If this setting is left empty it defaults to 0, and print jobs are removed nightly.
+
+===== Logs retention
+
+How long, in days, log entries are kept. If this setting is left empty it defaults to 0, and all logs are removed nightly.
 
 ==== Guest passes
 
@@ -291,14 +313,14 @@ To enable SIP authentication, you will need to edit your libki_local.conf and ad
 <3> You can set SIP2 patron status flags which will deny patrons the ability to log in
 <4> You can set as many or as few as you want. Delete these if you don't want to deny patrons.
 <5> The full listing is defined in the SIP2 protocol specification
-<6> You can require arbitrary SIP fields to have a value of Y for patrons to be allowed to log in. The format of the setting is _<Field>:<Message>_.
-<7> With the format _<Field>:<Message>:<Value>_ the login is denied if the field contains _<Value>_ and _<Message>_ is shown to the patron.
+<6> You can require arbitrary SIP fields to have a value of Y for patrons to be allowed to log in. The format of the setting is _<Field>:<Message>_. The message cannot contain a colon.
+<7> With the format _<Field>:<Message>:<Value>_ the login is denied if the field equals _<Value>_ or matches it as a regular expression, and _<Message>_ is shown to the patron.
 <8> Specify a SIP tag here that contains the user category in the SIP user lookup response
 <9> Specify a SIP tag here that contains the user's date of birth  in the SIP user lookup response, default is 'PB'.  Some ILS, like Atriuum by Booksystems, use 'PD'.
 <10> Specify a pattern for splitting lastname and firstname in personal name field(AE) in SIP response
 <11> If the patrons last name and first name are reversed, this option will correct the order
-<12> Can be 'Koha' or 'Evergreen' at this time, controls how waiting holds are calculated for alerting patrons
-<13> If set, patron names will not be imported into Libki, only the cardnumber/userid and par
+<12> Can be 'Koha', 'Evergreen' or 'Sierra' at this time, controls how waiting holds are calculated for alerting patrons. Any other value is treated like 'Koha'
+<13> If set, patron names will not be imported into Libki; only the card number/user ID is stored
 <14> Disables hold notification if set to 0
 
 An equivilent configuration set via YAML in the system settings would look like this:
@@ -335,10 +357,15 @@ The SIP section requires the following parameters:
 * location: The SIP location code that matches the sip login.
 * username: The username for the SIP account to use for transactions.
 * password: The password for the SIP accouant to use for transactions.
-* terminator: This is either CR or CRLF depending on the SIP server. Default is CR
-* require_sip_auth: Does this SIP server require a message 93 login before it can be used? If so this should be set to 1 and the username/password fields should be populated. This should be set to 1 for Koha.
-* enable_split_message: IF thie server supports split messages you can enable this. This should be set to 0 for Koha.
-* fee_limit: As notated, this can be a set number or a SIP field to check. If the fee limit is exceeded, the user login will be denied.
+* terminator: This is CR, CRLF or NL depending on the SIP server. Default is CR
+* timeout: Seconds to wait when connecting to the SIP server. Default is 15.
+* sip_enable_telnet_login: Set to 1 if the SIP server asks for a telnet-style login before speaking SIP. The `username` and `password` are used for it.
+* sip_telnet_login_prompt: With `sip_enable_telnet_login`, the text the server shows once the login has succeeded.
+* no_password_check: If set to 1, any password is accepted for a user the SIP server knows. See callout 1 above.
+* pattern_personal_name, pattern_personal_name_reverse, category_field, birthdate_field, ILS: See the callouts above.
+* require_sip_auth: Does this SIP server require a message 93 login before it can be used? If so this should be set to 1 and the username/password fields should be populated. This should be set to 1 for Koha. If the key is omitted, 1 is assumed.
+* enable_split_messages: If the server supports split messages you can enable this. This should be set to 0 for Koha.
+* fee_limit: As notated, this can be a set number or a SIP field to check. If the fee limit is exceeded, the user login will be denied. It works with or without `deny_on`.
 * deny_on: This can be repeated to deny logins based on the patron information flags detailed in the SIP2 protocol specification.
 * deny_on_field: This can be repeated to deny logins if the Specified field does not have a value of "Y".
 * skip_import_personal_name: If enabled, first and last names of patrons will not be pulled from the patron information response and stored in the database
@@ -346,22 +373,42 @@ The SIP section requires the following parameters:
 
 ==== LDAP
 
-Single Sign-on with other systems can be achieved via LDAP. Settings for LDAP server are currently stored in the _libki\_local.conf_ only, though setting support is expected soon.
+Single Sign-on with other systems can be achieved via LDAP. The settings can be stored in the _libki\_local.conf_ file or in the *LDAP configuration* setting (YAML, the same way as the SIP configuration). If both exist, the setting wins.
 
-TIP: Make sure the URL beings with http:// or https:// as necessary.
+TIP: The host can be a plain host name or a URL; if it is a URL, it must begin with `ldap://` (or `ldaps://` when `ldaps` is 1).
 
 ```
 <LDAP>
     enable 1
     ldaps 0
     host ldap://ldap.mylibrary.org
-    port 368
+    port 389
     adminDn admin_dn
     adminPwd admin_password
     searchBase OU=...,DC=mylibrary,DC=org
     match_attribute sAMAccountName
+    require_ldap_auth 1 # <1>
 </LDAP>
 ```
+<1> Optional. Defaults to 1 (the password is checked against the LDAP server). Set to 0 to accept any password for a user found in LDAP.
+
+The equivalent YAML for the *LDAP configuration* setting:
+
+[source,yaml]
+----
+enable: 1
+ldaps: 0
+host: ldap://ldap.mylibrary.org
+port: 389
+adminDn: admin_dn
+adminPwd: admin_password
+searchBase: OU=...,DC=mylibrary,DC=org
+match_attribute: sAMAccountName
+----
+
+Libki binds as `adminDn`, searches under `searchBase` for an entry whose `match_attribute` equals the username, then binds as that entry with the password the user typed. The user's password is also stored (hashed) in the Libki database on every successful login. NOTE: The `port` setting is currently ignored: Libki connects using only `host`. To use a non-standard port, put it in the host URL, for example `ldap://ldap.mylibrary.org:1389`; otherwise the default port for the protocol (389, or 636 for LDAPS) is used.
+
+WARNING: Libki does not verify the LDAP server's TLS certificate (it connects with certificate verification turned off). Use LDAPS only on a network you trust.
 
 ==== Payments
 
@@ -378,7 +425,7 @@ Stripe integration requires a https://stripe.com[Stripe.com] account.  You'll ne
 .. Click the 'Add destination' button (upper right)
 .. Enter the Endpoint URL: *<your Libki URL>*/api/v2/transactions/stripe/webhook 
 .. Give the destination a name and description
-.. Select the *_payment_intent.payment_failed_* and *_payment_intent.succeeded events_* from the list.
+.. Select the *_payment_intent.payment_failed_* and *_payment_intent.succeeded_* events from the list. Libki also handles *_payment_intent.canceled_* if you add it.
 .. Click the 'Save destination' button
 
 You can test your Stripe integration in sandbox mode before switching to a live account.  A list of testing credit card numbers can be found at https://docs.stripe.com/testing?testing-method=card-numbers#cards.
@@ -421,7 +468,7 @@ TIP: The value of *Reservation Auto-Cancel* should be a whole number.
 
 ===== Minimum reservation time required
 
-The minimum allowed time a reservation can be made for.  Defaults to 1 minute if left blank.
+The minimum allowed time a reservation can be made for. A new installation starts with 5 minutes; if the setting is left blank, 1 minute is used.
 
 ===== Reservation Gap
 
@@ -589,7 +636,13 @@ The list of all possible criteria include:
 
 * `client_location`
 * `client_name`
+* `client_type`
 * `user_category`
+
+Two behaviors to be aware of:
+
+* A criterion is only compared when the login supplies a value for it. For example, a client that has no location set matches a rule with `client_location: MyLocation1`, because there is no location to compare.
+* A rule is skipped if the value you are looking for is empty or `0`. A rule with `daily: 0` therefore does not give 0 minutes; the search continues with the next rule. Use a small positive number instead.
 
 The list of all possible rules include:
 
@@ -675,7 +728,8 @@ printers:
 
 ====== Printer parameters
 * chroming: Required, values are `color` or `monochrome`.
-* physical_printer_name: Required, must exactly match the name of the Windows printer to be used.
+* physical_printer_name: Required for PrintManager, must exactly match the name of the Windows printer to be used.
+* name: For `cups` printers, the CUPS queue name. If omitted, `physical_printer_name` is used.
 * public_printer_name: Required, this is how the printer will be displayed for print release
 * plexing: Required, values are "simplex", "duplexlong" or "duplexshort".
 * type: Required, current options are "PrintManager" or "cups".
@@ -722,7 +776,7 @@ color="C:\\printers\\color"
 monochrome="C:\\printers\\monochrome"
 ```
 
-As you can see, the printers match the `name:` fields defined print management configuration for the server.
+As you can see, the names on the left must match the printer IDs defined in the print management configuration for the server (the keys under `printers:`, such as `color`). The printer's `public_printer_name` is accepted as well.
 You will also need to ensure those directories exist on the client computer.
 Once the Libki client has been started, it will watch those directories for PDF files.
 When the client sees a file, it will uploaded it to the server with the matching printer name.

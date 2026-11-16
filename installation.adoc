@@ -2,7 +2,7 @@
 
 === One-step automatic install
 
-Do you want to setup Libki as fast as possible and have a dedicated server? Then this is the choice for you. Just make sure your server is running Ubuntu 18.04, 20.04 or Debian 11 (Bullseye) and that you don't have a user named 'libki'.
+Do you want to setup Libki as fast as possible and have a dedicated server? Then this is the choice for you. Just make sure your server is running Ubuntu 18.04, 20.04 or 22.04, or Debian 9 (Stretch), 10 (Buster) or 11 (Bullseye), and that you don't have a user named 'libki'. The installer refuses to run on other distributions, and stops immediately if the 'libki' user already exists. It must be run as root.
 
 [source,bash]
 ----
@@ -24,6 +24,10 @@ cd libki-server
 bash install.sh
 ----
 
+The installer also installs `libki-backup`, `libki-restore`, `libki-update`, `libki-translate` and `libki-setup` (the <<_setup_wizard,setup wizard>>) into `/usr/local/bin`.
+
+If you answer "Yes" to the reverse proxy question, the Apache site is installed from `reverse_proxy.config`. It does not set a Libki instance: a normal server uses the default (empty) instance, and the administrator account created by the installer lives there.
+
 === Docker
 
 The official Libki Server Docker image needs to be connected to a database server, it does not contain a MySQL instance within it.
@@ -31,35 +35,67 @@ Using a MySQL or a MariaDB container on the same Docker network is considered go
 
 The Libki Server image is available on https://hub.docker.com/r/libki/libki-server[Docker Hub].
 
-This container requires some environment variables to be set in order to function correctly, the following is a mocked example of the environment variables needed:
-----
-LIBKI_INSTANCE=<INSTANCE> // <1>
-LIBKI_DB_DSN=dbi:mysql:<DB_NAME>;host=<DB_HOSTNAME>;port=3306
-LIBKI_DB_USER=<DB_USERNAME>
-LIBKI_DB_PASSWORD=<DB_PASSWORD>
-LIBKI_DB_HOST=<DB_HOSTNAME>
-LIBKI_DB_PORT=3306
-LIBKI_DB_DATABASE=<DB_NAME>
-LIBKI_TZ=America/Denver // <2>
-----
-<1> Instance name, may be left empty for single-instance servers
-<2> Find your timezome in the documentation https://metacpan.org/pod/DateTime::TimeZone::Catalog[here].
+The easiest way to get started is the <<_setup_wizard,setup wizard>>: `script/utilities/setup-wizard.sh --docker` writes `docker/.env` for you, with generated database passwords.
 
-A Docker Compose file is provided at `docker/docker-compose.yml` which bring up both Libki Server and a MariaDB container.  Environment variables should be saved at `docker/.env`
+To do it by hand, create `docker/.env` next to `docker/docker-compose.yml`. Docker Compose reads these variables from that file:
+
+----
+LIBKI_ADMIN_USERNAME=<ADMIN_USERNAME> // <1>
+LIBKI_ADMIN_PASSWORD=<ADMIN_PASSWORD>
+LIBKI_INSTANCE= // <2>
+LIBKI_TZ=America/Denver // <3>
+LIBKI_PORT=3000 // <4>
+LIBKI_MAX_WORKERS=4
+LIBKI_SESSION_TIMEOUT=3600 // <5>
+DB_NAME=libki
+DB_USER=libki
+DB_PASS=<DB_PASSWORD> // <6>
+DB_ROOT_PASS=<DB_ROOT_PASSWORD>
+----
+<1> On every start the container creates a superadministrator with this name, or resets its password to this value if it already exists. If either value is empty, no administrator is created or changed, and you will have no way to log in.
+<2> Instance name. Leave it empty for a single-library server. If set, the instance is created on first start; a named instance is a separate, multi-tenant space with its own users and settings.
+<3> Find your timezone in the documentation https://metacpan.org/pod/DateTime::TimeZone::Catalog[here]. Defaults to `America/New_York`.
+<4> The port published on the Docker host. The server listens on 3000 inside the container.
+<5> Lifetime of a login session, in seconds.
+<6> Required. The compose file hands `DB_*` to both MariaDB and Libki. MariaDB only applies them the first time the `db_data` volume is created; after that, changing them in `.env` does not change the database.
+
+Then run `docker compose up -d` from the `docker` directory. The administration interface is at `http://<host>:<LIBKI_PORT>/administration`.
+
+The container itself reads the following environment variables, which compose fills in from the file above: `LIBKI_DB_DSN`, `LIBKI_DB_USER`, `LIBKI_DB_PASSWORD`, `LIBKI_INSTANCE`, `LIBKI_TZ`, `LIBKI_ADMIN_USERNAME`, `LIBKI_ADMIN_PASSWORD`, `LIBKI_SESSION_TIMEOUT`, `LIBKI_SERVER_PORT` and `LIBKI_MAX_WORKERS`. If you run the image without Docker Compose, set these yourself. (`LIBKI_DB_HOST`, `LIBKI_DB_PORT` and `LIBKI_DB_DATABASE` are only used by the `ldb` shell alias inside the container, not by the server.)
 
 ==== Cronjobs
 
 The Libki cronjobs are not set to run inside the Docker container. Instead, it the cronjobs should be set up on the host machine.
 
-Add the following to the root user's crontab or to a file in `/etc/cron.d/`.
+Add the following to a file in `/etc/cron.d/` (this format has a user column):
 
 ```
 * * * * * root docker exec <container-name> /app/script/cronjobs/libki.pl
 0 0 * * * root docker exec <container-name> /app/script/cronjobs/libki_nightly.pl
 ```
 
+If you use root's crontab (`sudo crontab -e`) instead, leave out the `root` column:
+
+```
+* * * * * docker exec <container-name> /app/script/cronjobs/libki.pl
+0 0 * * * docker exec <container-name> /app/script/cronjobs/libki_nightly.pl
+```
+
+On a native install, `install.sh` sets these up for you (the `libki` user's crontab runs both scripts, and root's crontab restarts the service if it has stopped).
+
 === Using Libki Server with TLS/SSL
 
 Libki Server does not have native SSL support. To use SSL with Libki, you should use a reverse proxy that supports SSL termination such as Apache, nginx, Traefik, etc. By default Libki uses Apache as its' proxy.
 
-Once you have SSL set up, set the proxy needs to send a custom http header `X-Request-Base` with the value of your server URL using SSL. For example, if your FQDN is `libki.mylib.org`, set `X-Request-Base` to `https://libki.mylib.org`.
+Once you have SSL set up, the proxy needs to send a custom HTTP header `X-Request-Base` with the value of your server URL using SSL. For example, if your FQDN is `libki.mylib.org`, set `X-Request-Base` to `https://libki.mylib.org`. With Apache this is `RequestHeader set X-Request-Base "https://libki.mylib.org"`; a commented example is included in `reverse_proxy.config`.
+
+NOTE: Do not set the `libki-instance` header unless you run a multi-tenant server. The header overrides the instance, so naming an instance that has not been created (see `script/administration/create_instance.pl`) makes logins fail.
+
+=== Setup wizard
+
+`script/utilities/setup-wizard.sh` (installed as `libki-setup` by `install.sh`) asks a few questions, using `whiptail` dialogs when it is available and plain prompts otherwise (`--plain` forces prompts).
+
+* `--docker` writes `docker/.env` (mode 600) with your administrator account, timezone and port, and freshly generated database passwords. It can then run `docker compose up -d`. An existing `.env` is backed up first.
+* `--native` is for a server that already has its Perl dependencies and a database. It writes the database settings into `libki_local.conf`, runs `installer/update_db.pl` and creates the administrator account.
+
+Without an option the wizard asks which one you want. `--no-start` skips the offer to start the containers.
