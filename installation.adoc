@@ -59,7 +59,9 @@ DB_ROOT_PASS=<DB_ROOT_PASSWORD>
 <5> Lifetime of a login session, in seconds.
 <6> Required. The compose file hands `DB_*` to both MariaDB and Libki. MariaDB only applies them the first time the `db_data` volume is created; after that, changing them in `.env` does not change the database.
 
-Then run `docker compose up -d` from the `docker` directory. The administration interface is at `http://<host>:<LIBKI_PORT>/administration`.
+Then run `docker compose up -d` from the `docker` directory.
+
+IMPORTANT: The container's port is published on the loopback address only (`127.0.0.1:<LIBKI_PORT>`), and the database port is not published at all. Libki is not reachable from other machines until you put a reverse proxy in front of it. The <<_setup_wizard,setup wizard>> can install and configure nginx for you; see <<_using_libki_server_with_tlsssl,Using Libki Server with TLS/SSL>> to do it by hand. For a quick local check, the administration interface is at `http://127.0.0.1:<LIBKI_PORT>/administration`. For a database shell, run `docker compose exec db mariadb -u root -p`.
 
 The container itself reads the following environment variables, which compose fills in from the file above: `LIBKI_DB_DSN`, `LIBKI_DB_USER`, `LIBKI_DB_PASSWORD`, `LIBKI_INSTANCE`, `LIBKI_TZ`, `LIBKI_ADMIN_USERNAME`, `LIBKI_ADMIN_PASSWORD`, `LIBKI_SESSION_TIMEOUT`, `LIBKI_SERVER_PORT` and `LIBKI_MAX_WORKERS`. If you run the image without Docker Compose, set these yourself. (`LIBKI_DB_HOST`, `LIBKI_DB_PORT` and `LIBKI_DB_DATABASE` are only used by the `ldb` shell alias inside the container, not by the server.)
 
@@ -87,7 +89,7 @@ On a native install, `install.sh` sets these up for you (the `libki` user's cron
 
 Libki Server does not have native SSL support. To use SSL with Libki, you should use a reverse proxy that supports SSL termination such as Apache, nginx, Traefik, etc. By default Libki uses Apache as its' proxy.
 
-Once you have SSL set up, the proxy needs to send a custom HTTP header `X-Request-Base` with the value of your server URL using SSL. For example, if your FQDN is `libki.mylib.org`, set `X-Request-Base` to `https://libki.mylib.org`. With Apache this is `RequestHeader set X-Request-Base "https://libki.mylib.org"`; a commented example is included in `reverse_proxy.config`.
+Once you have SSL set up, the proxy needs to send a custom HTTP header `X-Request-Base` with the value of your server URL using SSL. For example, if your FQDN is `libki.mylib.org`, set `X-Request-Base` to `https://libki.mylib.org`. With Apache this is `RequestHeader set X-Request-Base "https://libki.mylib.org"`; a commented example is included in `reverse_proxy.config`. With nginx it is `proxy_set_header X-Request-Base "https://libki.mylib.org";`.
 
 NOTE: Do not set the `libki-instance` header unless you run a multi-tenant server. The header overrides the instance, so naming an instance that has not been created (see `script/administration/create_instance.pl`) makes logins fail.
 
@@ -95,7 +97,32 @@ NOTE: Do not set the `libki-instance` header unless you run a multi-tenant serve
 
 `script/utilities/setup-wizard.sh` (installed as `libki-setup` by `install.sh`) asks a few questions, using `whiptail` dialogs when it is available and plain prompts otherwise (`--plain` forces prompts).
 
-* `--docker` writes `docker/.env` (mode 600) with your administrator account, timezone and port, and freshly generated database passwords. It can then run `docker compose up -d`. An existing `.env` is backed up first.
+* `--docker` writes `docker/.env` (mode 600) with your administrator account, timezone and port, and freshly generated database passwords. It can then set up nginx (below) and run `docker compose up -d`. An existing `.env` is backed up first.
 * `--native` is for a server that already has its Perl dependencies and a database. It writes the database settings into `libki_local.conf`, runs `installer/update_db.pl` and creates the administrator account.
 
-Without an option the wizard asks which one you want. `--no-start` skips the offer to start the containers.
+Without an option the wizard asks which one you want. `--no-start` skips the offer to start the containers, and `--no-nginx` skips the nginx question.
+
+==== nginx front end (Docker)
+
+The Docker container listens on `127.0.0.1` only, so the wizard offers to install and configure nginx as the public front end. This needs root on a Debian or Ubuntu host. It asks for the public host name (its DNS record must already point at this server) and one of:
+
+* *An existing certificate and key.* Give the paths of the PEM files. The wizard checks that the key matches the certificate, warns if the certificate has expired or does not list the host name, and refuses to continue if they do not match. See <<_using_an_existing_certificate,Using an existing certificate>>.
+* *Let's Encrypt.* It installs `certbot` and `python3-certbot-nginx` and requests a certificate, with HTTP redirected to HTTPS. Ports 80 and 443 must be reachable from the internet. It asks for an email address for expiry notices. If certbot fails, the site stays up on plain HTTP and the wizard prints the command to retry.
+* *Plain HTTP.* No TLS. Only for testing or a trusted network.
+
+The site is written to `/etc/nginx/sites-available/libki` (an existing file is backed up first) and enabled in `sites-enabled`. The wizard runs `nginx -t` before loading it, and removes the site again if nginx rejects it. The configuration sends the `X-Request-Base` header Libki needs, and allows uploads of up to 100 MB so print jobs can be sent through the server. IPv6 listeners are added only if the host has IPv6.
+
+If you are not root, or the host is not Debian or Ubuntu, nothing is installed. The wizard writes the configuration to `docker/nginx-libki.conf` for you to place in nginx yourself.
+
+Open ports 80 and 443 in your firewall. Do not open the Libki port.
+
+==== Using an existing certificate
+
+Choose "existing" in the wizard, or point `ssl_certificate` and `ssl_certificate_key` at your files if you configure nginx yourself. Check these first:
+
+* The certificate file must contain the full chain: your certificate followed by the intermediate certificates. A leaf-only file works in some browsers and fails in others, and often in Libki clients.
+* The private key must be PEM and must not have a passphrase, because nginx cannot ask for one when it starts. To remove a passphrase: `openssl pkey -in encrypted.key -out libki.key`.
+* The certificate must list your host name (or a matching wildcard) as a subject alternative name.
+* Both files must be readable by root. nginx reads them at start-up, before it drops privileges. Keep the key at mode 600.
+* A `.pfx`/`.p12` bundle must be converted first: `openssl pkcs12 -in bundle.pfx -nocerts -nodes -out libki.key` and `openssl pkcs12 -in bundle.pfx -nokeys -out libki-chain.pem`.
+* The wizard does not renew anything, and it points nginx at your files where they are. When you renew, replace the files in place and run `nginx -s reload`; nginx keeps using the old certificate until it is reloaded.
