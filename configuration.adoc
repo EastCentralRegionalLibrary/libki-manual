@@ -645,18 +645,9 @@ The list of all possible criteria include:
 * `client_type`
 * `user_category`
 
-Two behaviors to be aware of:
+A criterion only matches when the login supplies a value for it. For example, a rule with `client_location: MyLocation1` does not apply to a client that has no location, and a rule with `user_category` does not apply to a user with no category; rules like that are skipped and the search continues with the next rule.
 
-* A criterion is only compared when the login supplies a value for it. For example, a client that has no location set matches a rule with `client_location: MyLocation1`, because there is no location to compare.
-* A rule is skipped if the value you are looking for is empty or `0`. A rule with `daily: 0` therefore does not give 0 minutes; the search continues with the next rule. Use a small positive number instead.
-
-The list of all possible rules include:
-
-* `session`: The number of minutes per session a registered user is given
-* `guest_session`: The number of minutes per session a guest user is given
-* `daily`: The daily allotment of minutes to be given to a registered user for the day
-* `guest_daily`: The daily allotment of minutes to be given to a guest user for the day
-* `no_reservation_required`: Even if "Client reservations" is set to "Reservation only", allows a login without a reservation. The value should be '1' to enable.
+A rule value of `0` is a real value. For example, `daily: 0` or `session: 0` leaves a matching user with no time, and the login is refused. An empty value is treated as not set, and that rule is skipped for that setting.
 
 ==== API keys
 
