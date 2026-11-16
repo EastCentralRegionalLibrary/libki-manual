@@ -388,9 +388,13 @@ TIP: The host can be a plain host name or a URL; if it is a URL, it must begin w
     searchBase OU=...,DC=mylibrary,DC=org
     match_attribute sAMAccountName
     require_ldap_auth 1 # <1>
+    verify none # <2>
+    cafile /etc/ssl/certs/my-ca.pem # <3>
 </LDAP>
 ```
 <1> Optional. Defaults to 1 (the password is checked against the LDAP server). Set to 0 to accept any password for a user found in LDAP.
+<2> Optional. How the server's TLS certificate is checked when `ldaps` is 1: `none` (the default, no checking), `optional` or `require`. Any other value is an error.
+<3> Optional. A CA certificate file (`cafile`) or directory (`capath`) to trust, for use with `verify require` when your directory's certificate is signed by a private CA.
 
 The equivalent YAML for the *LDAP configuration* setting:
 
@@ -404,11 +408,13 @@ adminDn: admin_dn
 adminPwd: admin_password
 searchBase: OU=...,DC=mylibrary,DC=org
 match_attribute: sAMAccountName
+verify: require
+cafile: /etc/ssl/certs/my-ca.pem
 ----
 
-Libki binds as `adminDn`, searches under `searchBase` for an entry whose `match_attribute` equals the username, then binds as that entry with the password the user typed. The user's password is also stored (hashed) in the Libki database on every successful login. NOTE: The `port` setting is currently ignored: Libki connects using only `host`. To use a non-standard port, put it in the host URL, for example `ldap://ldap.mylibrary.org:1389`; otherwise the default port for the protocol (389, or 636 for LDAPS) is used.
+Libki binds as `adminDn`, searches under `searchBase` for an entry whose `match_attribute` equals the username, then binds as that entry with the password the user typed. The user's password is also stored (hashed) in the Libki database on every successful login. The `port` setting is used when `host` is a plain host name. If `host` is a URL, the port in the URL is used instead, or the protocol default (389, or 636 for LDAPS) if it has none; `port` is then ignored. The usual ports are 389 for LDAP and 636 for LDAPS.
 
-WARNING: Libki does not verify the LDAP server's TLS certificate (it connects with certificate verification turned off). Use LDAPS only on a network you trust.
+WARNING: Certificate checking is off unless you set `verify`. With `verify none`, anyone able to intercept the connection can read the administrator and user passwords. Set `verify require` (and `cafile` or `capath` if you use a private CA) once your directory's certificate is trusted. The host name in `host` must match the certificate.
 
 ==== Payments
 
